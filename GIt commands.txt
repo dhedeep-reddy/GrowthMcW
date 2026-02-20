@@ -1,0 +1,61 @@
+Git Commands Cheat Sheet
+
+Repository Setup
+git init
+git clone <URL>
+
+Check Status and History
+git status
+git log
+git diff
+git diff --staged
+
+Staging and Committing
+git add .
+git add <file-name>
+git add -A
+git commit -m "your commit message"
+git commit --amend
+git restore --staged names.txt
+
+Reset and Undo
+git reset <commit-id>
+git reset --soft <commit-id>
+git reset --hard <commit-id>
+
+Stash
+git stash
+git stash push -m "message"
+git stash list
+git stash pop
+git stash clear
+
+Branching
+git branch <branch-name>
+git branch -d <branch-name>
+git branch -D <branch-name>
+git checkout <branch-name>
+git checkout -b <branch-name>
+git switch <branch-name>
+git switch -c <branch-name>
+git merge <branch-name>
+
+Remote Repository
+git remote add origin <URL>
+git remote add upstream <URL>
+git remote remove origin
+git remote -v
+
+Push and Pull
+git push origin main
+git push -u origin main
+git pull origin master
+
+Fetch and Sync
+git fetch --all --prune
+
+Clean Untracked Files
+git clean -f
+
+Interactive Rebase
+git rebase -i <commit-id>
