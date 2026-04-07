@@ -1,0 +1,20 @@
+perf stat ./sum_uint8
+→ Shows overall performance statistics (cycles, instructions, IPC, context switches, etc.) for the program.
+
+OMP_NUM_THREADS=8 perf stat ./sum_uint8
+→ Runs the program with 8 OpenMP threads and measures performance to analyze parallel scaling.
+
+perf stat -r 5 ./sum_uint8
+→ Repeats execution 5 times and reports average statistics for more stable results.
+
+perf record ./sum_uint8
+→ Records detailed performance data for later analysis (sampling-based profiling).
+
+perf report
+→ Displays a breakdown of where the CPU time was spent (hot functions, hotspots).
+
+perf stat -d ./sum_uint8
+→ Provides detailed stats including cache misses, branch misses, etc.
+
+perf stat -e cycles,instructions ./sum_uint8
+→ Measures specific hardware counters (like cycles and instructions) explicitly.
