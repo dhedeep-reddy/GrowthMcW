@@ -3,8 +3,8 @@
 #include <cmath>
 using namespace std;
 
-#define N 1024
-#define TILE_SIZE 16
+#define N 2048
+#define TILE_SIZE 32
 #define WPT 4
 #define RTS (TILE_SIZE / WPT)
 
@@ -84,7 +84,7 @@ __global__ void gpu_matmul_optimized(const float* __restrict__ A,
         for(int k = 0; k < TILE_SIZE; k++)
         {
             float a_val = As[ping][ty][k];
-            #pragma unroll
+
             for(int w = 0; w < WPT; w++)
                 sum[w] += a_val * Bs[ping][k][tx*WPT+w];
         }

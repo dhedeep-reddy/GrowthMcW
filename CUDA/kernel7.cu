@@ -3,9 +3,8 @@
 
 using namespace std;
 
-// ================= CONFIG =================
-#define TSM 64
-#define TSN 64
+#define TSM 32
+#define TSN 32
 #define TSK 16
 
 #define WPTM 4
@@ -14,10 +13,8 @@ using namespace std;
 #define RTSM (TSM / WPTM)
 #define RTSN (TSN / WPTN)
 
-#define WIDTH 4   // float4
-// ==========================================
+#define WIDTH 4   
 
-// TRANSPOSE (for coalescing)
 __global__ void transpose(float* A, float* At, int N)
 {
     __shared__ float tile[32][32];
@@ -37,7 +34,7 @@ __global__ void transpose(float* A, float* At, int N)
         At[newY * N + newX] = tile[threadIdx.x][threadIdx.y];
 }
 
-// ================= GEMM =================
+
 __global__ void gemm2D_vec(float* A, float* Bt, float* C,
                           int M, int N, int K)
 {
@@ -54,7 +51,7 @@ __global__ void gemm2D_vec(float* A, float* Bt, float* C,
 
     for (int t = 0; t < K / TSK; t++)
     {
-        // ================= LOAD (VECTORIZED) =================
+
 
         int linearTid = tidn * RTSM + tidm;
 
@@ -91,7 +88,7 @@ __global__ void gemm2D_vec(float* A, float* Bt, float* C,
 
         __syncthreads();
 
-        // ================= COMPUTE =================
+
         for (int k = 0; k < TSK; k++)
         {
             float Areg[WPTM];
@@ -121,7 +118,7 @@ __global__ void gemm2D_vec(float* A, float* Bt, float* C,
         __syncthreads();
     }
 
-    // ================= STORE =================
+  
     for (int wm = 0; wm < WPTM; wm++)
     {
         int globalRow = globalRowBase + tidm + wm * RTSM;
@@ -136,7 +133,7 @@ __global__ void gemm2D_vec(float* A, float* Bt, float* C,
     }
 }
 
-// ================= MAIN =================
+
 int main()
 {
     const int N = 1024;
@@ -162,14 +159,13 @@ int main()
     cudaMemcpy(d_A, h_A, size, cudaMemcpyHostToDevice);
     cudaMemcpy(d_B, h_B, size, cudaMemcpyHostToDevice);
 
-    // Transpose
     dim3 tBlock(32, 32);
     dim3 tGrid(N / 32, N / 32);
     transpose<<<tGrid, tBlock>>>(d_B, d_Bt, N);
 
-    // GEMM
-    dim3 threads(RTSM, RTSN);   // 16x16
-    dim3 blocks(26, 26);        // SM aligned
+   
+    dim3 threads(RTSM, RTSN);   
+    dim3 blocks(26, 26);        
 
     gemm2D_vec<<<blocks, threads>>>(d_A, d_Bt, d_C, N, N, N);
 

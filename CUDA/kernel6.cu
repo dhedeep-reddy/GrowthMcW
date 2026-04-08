@@ -3,7 +3,6 @@
 
 using namespace std;
 
-// ================= CONFIG =================
 #define TSM 64
 #define TSN 64
 #define TSK 16
@@ -14,7 +13,6 @@ using namespace std;
 #define RTSM (TSM / WPTM)
 #define RTSN (TSN / WPTN)
 
-// ==========================================
 
 // Transpose kernel (for coalescing)
 __global__ void transpose(float* A, float* At, int N)
@@ -131,7 +129,6 @@ __global__ void gemm2D(float* A, float* Bt, float* C,
     }
 }
 
-// ================= MAIN =================
 
 int main()
 {
