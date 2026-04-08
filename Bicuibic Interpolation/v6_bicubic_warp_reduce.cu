@@ -262,9 +262,8 @@ __global__ void bicubic_backward_kernel(
 
     float dx = 0.f, dy = 0.f, g = 0.f;
     int ix = 0, iy = 0, lx = 0, ly = 0;
-    bool active = (out_x < outW && out_y < outH);
 
-    if (active)
+    if (out_x < outW && out_y < outH)
     {
         float in_x = (out_x + 0.5f) * scaleX - 0.5f;
         float in_y = (out_y + 0.5f) * scaleY - 0.5f;
@@ -308,7 +307,7 @@ __global__ void bicubic_backward_kernel(
             if (contrib != 0.f) {
                 if (sy >= 0 && sy < smem_h && sx >= 0 && sx < smem_w)
                     atomicAdd(&smem[sy][sx], contrib);
-                else if (active) {
+                else {
                     int gx = min(max(ix + n - 1, 0), inW - 1);
                     int gy = min(max(iy + m - 1, 0), inH - 1);
                     atomicAdd(&grad_input[gy * inW + gx], contrib);

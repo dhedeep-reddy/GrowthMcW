@@ -307,7 +307,6 @@ __global__ void bicubic_backward_kernel(
         int lx = ix - ix0;
         int ly = iy - iy0;
 
-        // OPT 2: float4 weight packing
         float4 Wx4 = cubic4_gpu(dx);
         float4 Wy4 = cubic4_gpu(dy);
         float Wxv[4] = {Wx4.x, Wx4.y, Wx4.z, Wx4.w};
