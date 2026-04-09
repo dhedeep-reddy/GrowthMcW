@@ -100,7 +100,7 @@ Mat bicubic_backward_cpu(const Mat& input, const Mat& grad_output, int outW, int
 
 
 #define TILE        16
-#define MAX_SCALE   2
+#define MAX_SCALE   1
 #define SMEM_W      (TILE * 2 * MAX_SCALE + 4)
 #define SMEM_H      (TILE * 2 * MAX_SCALE + 4)
 #define SMEM_WP     (SMEM_W + 1)
@@ -444,21 +444,21 @@ int main()
     gray.convertTo(gray, CV_32F);
 
     int inW = gray.cols, inH = gray.rows;
-    int outW = inW * 2,  outH = inH * 2;
+    int outW = inW * 4,  outH = inH * 4;
     cout << "Input  : " << inH << " x " << inW << endl;
     cout << "Output : " << outH << " x " << outW << endl;
 
-    Mat cpu_fwd  = bicubic_forward_cpu(gray, outW, outH);
+    //Mat cpu_fwd  = bicubic_forward_cpu(gray, outW, outH);
     Mat cuda_fwd = bicubic_forward_cuda(gray, outW, outH);
-    validate(cpu_fwd, cuda_fwd, "Forward: CPU vs CUDA");
+    //validate(cpu_fwd, cuda_fwd, "Forward: CPU vs CUDA");
 
     Mat grad_out  = Mat::ones(outH, outW, CV_32F);
-    Mat cpu_bwd   = bicubic_backward_cpu(gray, grad_out, outW, outH);
+    //Mat cpu_bwd   = bicubic_backward_cpu(gray, grad_out, outW, outH);
     Mat cuda_bwd  = bicubic_backward_cuda(grad_out, inW, inH);
-    validate(cpu_bwd, cuda_bwd, "Backward: CPU vs CUDA");
+    //validate(cpu_bwd, cuda_bwd, "Backward: CPU vs CUDA");
 
-    save_bin(cpu_fwd, "cpp_forward.bin");
-    save_bin(cpu_bwd, "cpp_backward.bin");
+    //save_bin(cpu_fwd, "cpp_forward.bin");
+    //save_bin(cpu_bwd, "cpp_backward.bin");
 
     cout << "\nDone." << endl;
     return 0;

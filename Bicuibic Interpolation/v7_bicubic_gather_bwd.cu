@@ -8,6 +8,7 @@ using namespace std;
 using namespace cv;
 
 
+
 float cubic_cpu(float x)
 {
     const float a = -0.75f;
@@ -20,7 +21,6 @@ float cubic_cpu(float x)
     else
         return 0.0f;
 }
-
 
 __device__ __forceinline__ float cubic_gpu(float x)
 {
@@ -36,7 +36,6 @@ __device__ __forceinline__ float cubic_gpu(float x)
     return      (x <  2.f) ? r  : 0.f;
 }
 
-
 __device__ __forceinline__ float4 cubic4_gpu(float d)
 {
     return make_float4(
@@ -48,7 +47,7 @@ __device__ __forceinline__ float4 cubic4_gpu(float d)
 }
 
 
-// CPU Forward
+
 Mat bicubic_forward_cpu(const Mat& input, int outW, int outH)
 {
     int inW = input.cols, inH = input.rows;
@@ -87,7 +86,6 @@ Mat bicubic_forward_cpu(const Mat& input, int outW, int outH)
 }
 
 
-// CPU Backward
 
 Mat bicubic_backward_cpu(const Mat& input, const Mat& grad_output,
                          int outW, int outH)
@@ -128,28 +126,20 @@ Mat bicubic_backward_cpu(const Mat& input, const Mat& grad_output,
 
 
 
-#define TILE        16
-#define MAX_SCALE   2
+#define TILE    16
 
-// Forward smem: covers TILE*2 output pixels per dim at max scale, +4 bicubic halo
-#define SMEM_W      (TILE * 2 * MAX_SCALE + 4)
-#define SMEM_H      (TILE * 2 * MAX_SCALE + 4)
+#define MAX_SCALE_FWD  1
+#define SMEM_W      (TILE * 2 * MAX_SCALE_FWD + 4)
+#define SMEM_H      (TILE * 2 * MAX_SCALE_FWD + 4)
 #define SMEM_WP     (SMEM_W + 1)
 
-// Backward smem: covers TILE input pixels per dim → TILE*MAX_SCALE output pixels, +4 halo
 
-#define SMEM_W_BWD  (TILE * MAX_SCALE + 4 * MAX_SCALE + 4)   // 44 at 2x
-#define SMEM_H_BWD  (TILE * MAX_SCALE + 4 * MAX_SCALE + 4)
-#define SMEM_WP_BWD (SMEM_W_BWD + 1)
-
-
-// CUDA Forward Kernel
 
 __global__ void bicubic_forward_kernel(
     const float* __restrict__ input,  int inW,  int inH,
          float* __restrict__ output, int outW, int outH,
     float scaleX, float scaleY)
- {
+{
     __shared__ float smemA[SMEM_H][SMEM_WP];
     __shared__ float smemB[SMEM_H][SMEM_WP];
 
@@ -239,11 +229,10 @@ __global__ void bicubic_forward_kernel(
     {
         int sy = i / smem_w, sx = i % smem_w;
         int gx = min(max(next_ix0 + sx, 0), inW - 1);
-        int gy = min(max(iy0      + sy, 0), inH - 1);
+        int gy = min(max(iy0       + sy, 0), inH - 1);
         nxtBuf[sy][sx] = __ldg(&input[gy * inW + gx]);
     }
 
-    // write 2x2 results
     #pragma unroll 2
     for (int rr = 0; rr < 2; rr++)
     #pragma unroll 2
@@ -263,108 +252,107 @@ __global__ void bicubic_backward_kernel(
           float* __restrict__ grad_input,  int inW,  int inH,
     float scaleX, float scaleY)
 {
-    __shared__ float smem[SMEM_H_BWD][SMEM_WP_BWD];
+    extern __shared__ float smem[];
 
     int tx  = threadIdx.x, ty = threadIdx.y;
     int tid = ty * TILE + tx;
 
-    int in_x = blockIdx.x * TILE + tx;
-    int in_y = blockIdx.y * TILE + ty;
-
     float inv_scaleX = 1.f / scaleX;
     float inv_scaleY = 1.f / scaleY;
 
-    int ox0 = max(0, (int)floorf((blockIdx.x * TILE - 2.f) * inv_scaleX - 0.5f) - 1);
-    int oy0 = max(0, (int)floorf((blockIdx.y * TILE - 2.f) * inv_scaleY - 0.5f) - 1);
+    int in_x_min = blockIdx.x * TILE;
+    int in_y_min = blockIdx.y * TILE;
+    int in_x_max = min(in_x_min + TILE - 1, inW - 1);
+    int in_y_max = min(in_y_min + TILE - 1, inH - 1);
 
-    int smem_w = min((int)ceilf((TILE + 4.f) * inv_scaleX) + 4, SMEM_W_BWD);
-    int smem_h = min((int)ceilf((TILE + 4.f) * inv_scaleY) + 4, SMEM_H_BWD);
-    int total  = smem_w * smem_h;
 
-    // Cooperatively load grad_output patch — coalesced reads, L1-speed inner loop.
+    int ox0 = max(0,       (int)floorf((in_x_min - 1.5f) * inv_scaleX - 0.5f));
+    int oy0 = max(0,       (int)floorf((in_y_min - 1.5f) * inv_scaleY - 0.5f));
+    int ox1 = min(outW-1,  (int)floorf((in_x_max + 2.5f) * inv_scaleX - 0.5f) + 1);
+    int oy1 = min(outH-1,  (int)floorf((in_y_max + 2.5f) * inv_scaleY - 0.5f) + 1);
+
+    int tile_smem_w = ox1 - ox0 + 1;
+    int tile_smem_h = oy1 - oy0 + 1;
+    int total       = tile_smem_w * tile_smem_h;
+
     for (int i = tid; i < total; i += TILE * TILE)
     {
-        int sy = i / smem_w, sx = i % smem_w;
-        int gx = min(ox0 + sx, outW - 1);
-        int gy = min(oy0 + sy, outH - 1);
-        smem[sy][sx] = __ldg(&grad_output[gy * outW + gx]);
+        int sy = i / tile_smem_w;
+        int sx = i % tile_smem_w;
+        int gx = ox0 + sx;   
+        int gy = oy0 + sy;   
+        smem[sy * tile_smem_w + sx] = __ldg(&grad_output[gy * outW + gx]);
     }
     __syncthreads();
 
+    int in_x = in_x_min + tx;
+    int in_y = in_y_min + ty;
     if (in_x >= inW || in_y >= inH) return;
 
-    int ox_start = max(ox0,    (int)floorf((in_x - 2.f) * inv_scaleX - 0.5f) - 1);
-    int ox_end   = min(outW-1, (int)floorf((in_x + 3.f) * inv_scaleX - 0.5f) + 1);
-    int oy_start = max(oy0,    (int)floorf((in_y - 2.f) * inv_scaleY - 0.5f) - 1);
-    int oy_end   = min(outH-1, (int)floorf((in_y + 3.f) * inv_scaleY - 0.5f) + 1);
+    int ox_start = max(ox0,     (int)floorf((in_x - 1.5f) * inv_scaleX - 0.5f));
+    int ox_end   = min(outW-1,  (int)floorf((in_x + 2.5f) * inv_scaleX - 0.5f) + 1);
+    int oy_start = max(oy0,     (int)floorf((in_y - 1.5f) * inv_scaleY - 0.5f));
+    int oy_end   = min(outH-1,  (int)floorf((in_y + 2.5f) * inv_scaleY - 0.5f) + 1);
 
-
-    // Interior fast path: no border clamping fires
     const bool interior = (in_x >= 2 && in_x < inW - 2 &&
                            in_y >= 2 && in_y < inH - 2);
 
+    float grad_sum = 0.f;
 
-    // Precompute wy_arr for every oy row before entering the inner ox loop.
-    float wy_arr[SMEM_H_BWD];
-
-    int n_oy = oy_end - oy_start + 1;
-
-    for (int j = 0; j < n_oy; j++)
+    for (int oy = oy_start; oy <= oy_end; oy++)
     {
-        int   oy       = oy_start + j;
         float mapped_y = fmaxf(0.f, fminf((oy + 0.5f) * scaleY - 0.5f, (float)(inH - 1)));
         int   iy       = (int)floorf(mapped_y);
         float dy       = mapped_y - iy;
 
-        if (interior) {
-            int ny     = in_y - iy;
-            wy_arr[j]  = (ny >= -1 && ny <= 2) ? cubic_gpu(dy - (float)ny) : 0.f;
-        } else {
-            float wy = 0.f;
-            for (int m = -1; m <= 2; m++) {
+        float wy;
+        if (interior)
+        {
+            int ny = in_y - iy;
+            if (ny < -1 || ny > 2) continue;
+            wy = cubic_gpu(dy - (float)ny);
+        }
+        else
+        {
+            wy = 0.f;
+            for (int m = -1; m <= 2; m++)
                 if (min(max(iy + m, 0), inH - 1) == in_y)
                     wy += cubic_gpu(dy - (float)m);
-            }
-            wy_arr[j] = wy;
         }
-    }
+        if (wy == 0.f) continue;
 
-    float grad_sum = 0.f;
-
-    for (int j = 0; j < n_oy; j++)
-    {
-        float wy = wy_arr[j];
-        if (wy == 0.f) continue;                
-
-        int   sy = (oy_start + j) - oy0;
+        int sy = oy - oy0;
 
         for (int ox = ox_start; ox <= ox_end; ox++)
         {
             float mapped_x = fmaxf(0.f, fminf((ox + 0.5f) * scaleX - 0.5f, (float)(inW - 1)));
-            int   ix = (int)floorf(mapped_x);
-            float dx = mapped_x - ix;
+            int   ix       = (int)floorf(mapped_x);
+            float dx       = mapped_x - ix;
 
             float wx;
-            if (interior) {
+            if (interior)
+            {
                 int nx = in_x - ix;
                 if (nx < -1 || nx > 2) continue;
                 wx = cubic_gpu((float)nx - dx);
-            } else {
+            }
+            else
+            {
                 wx = 0.f;
-                for (int n = -1; n <= 2; n++) {
+                for (int n = -1; n <= 2; n++)
                     if (min(max(ix + n, 0), inW - 1) == in_x)
                         wx += cubic_gpu((float)n - dx);
-                }
                 if (wx == 0.f) continue;
             }
 
             int sx = ox - ox0;
-            grad_sum = __fmaf_rn(smem[sy][sx], wx * wy, grad_sum);
+            grad_sum = __fmaf_rn(smem[sy * tile_smem_w + sx], wx * wy, grad_sum);
         }
     }
 
     grad_input[in_y * inW + in_x] = grad_sum;
 }
+
 
 
 
@@ -415,11 +403,15 @@ Mat bicubic_forward_cuda(const Mat& input, int outW, int outH)
     return output;
 }
 
+
+
 Mat bicubic_backward_cuda(const Mat& grad_out_mat, int inW, int inH)
 {
     int outW = grad_out_mat.cols, outH = grad_out_mat.rows;
-    float scaleX = (float)inW / outW;
-    float scaleY = (float)inH / outH;
+    float scaleX  = (float)inW / outW;
+    float scaleY  = (float)inH / outH;
+    float inv_scaleX = 1.f / scaleX;
+    float inv_scaleY = 1.f / scaleY;
 
     float *d_grad_output, *d_grad_input;
     cudaMalloc(&d_grad_output, sizeof(float) * outW * outH);
@@ -427,19 +419,42 @@ Mat bicubic_backward_cuda(const Mat& grad_out_mat, int inW, int inH)
 
     cudaMemcpy(d_grad_output, grad_out_mat.ptr<float>(0),
                sizeof(float) * outW * outH, cudaMemcpyHostToDevice);
-    // gather kernel writes directly (no atomics), must zero first
     cudaMemset(d_grad_input, 0, sizeof(float) * inW * inH);
 
-    // grid over input pixels — one thread per grad_input element
     dim3 block(TILE, TILE);
-    dim3 grid((inW + TILE - 1) / TILE, (inH + TILE - 1) / TILE);
+    dim3 grid((inW + TILE - 1) / TILE,
+              (inH + TILE - 1) / TILE);
+
+    
+    int max_smem_w = (int)ceilf((TILE + 4.f) * inv_scaleX) + 6;
+    int max_smem_h = (int)ceilf((TILE + 4.f) * inv_scaleY) + 6;
+    size_t smem_bytes = (size_t)max_smem_w * max_smem_h * sizeof(float);
+
+
+    {
+        int dev;
+        cudaGetDevice(&dev);
+        cudaDeviceProp prop;
+        cudaGetDeviceProperties(&prop, dev);
+        if (smem_bytes > prop.sharedMemPerBlock)
+        {
+            fprintf(stderr,
+                "[Backward] ERROR: required smem (%zu B) > device limit (%zu B).\n"
+                "  scale=%.2fx, TILE=%d. Increase TILE or reduce scale.\n",
+                smem_bytes, prop.sharedMemPerBlock,
+                inv_scaleX, TILE);
+            cudaFree(d_grad_output);
+            cudaFree(d_grad_input);
+            return Mat::zeros(inH, inW, CV_32F);
+        }
+    }
 
     cudaEvent_t t0, t1;
     cudaEventCreate(&t0);
     cudaEventCreate(&t1);
     cudaEventRecord(t0);
 
-    bicubic_backward_kernel<<<grid, block>>>(
+    bicubic_backward_kernel<<<grid, block, smem_bytes>>>(
         d_grad_output, outW, outH,
         d_grad_input,  inW,  inH,
         scaleX, scaleY);
@@ -449,8 +464,6 @@ Mat bicubic_backward_cuda(const Mat& grad_out_mat, int inW, int inH)
 
     float ms;
     cudaEventElapsedTime(&ms, t0, t1);
-    // each input pixel loops over ~(4/scaleX)*(4/scaleY) output pixels,
-    // each costing ~(4+4) cubic evals + 2 fmad
     long long flops = (long long)inW * inH * (64 * 9);
     cout << "[Backward] kernel: " << ms << " ms  |  "
          << (flops / 1e9) / (ms / 1000.f) << " GFLOPS" << endl;
@@ -466,7 +479,6 @@ Mat bicubic_backward_cuda(const Mat& grad_out_mat, int inW, int inH)
     cudaFree(d_grad_input);
     return grad_input;
 }
-
 
 
 
@@ -510,22 +522,22 @@ int main()
     gray.convertTo(gray, CV_32F);
 
     int inW  = gray.cols, inH  = gray.rows;
-    int outW = inW * 2,   outH = inH * 2;
+    int outW = inW * 8,   outH = inH * 8;
 
     cout << "Input  : " << inH << " x " << inW << endl;
     cout << "Output : " << outH << " x " << outW << endl;
 
-    Mat cpu_fwd  = bicubic_forward_cpu(gray, outW, outH);
+    //Mat cpu_fwd  = bicubic_forward_cpu(gray, outW, outH);
     Mat cuda_fwd = bicubic_forward_cuda(gray, outW, outH);
-    validate(cpu_fwd, cuda_fwd, "Forward: CPU vs CUDA");
+    //validate(cpu_fwd, cuda_fwd, "Forward: CPU vs CUDA");
 
     Mat grad_out = Mat::ones(outH, outW, CV_32F);
-    Mat cpu_bwd  = bicubic_backward_cpu(gray, grad_out, outW, outH);
+    //Mat cpu_bwd  = bicubic_backward_cpu(gray, grad_out, outW, outH);
     Mat cuda_bwd = bicubic_backward_cuda(grad_out, inW, inH);
-    validate(cpu_bwd, cuda_bwd, "Backward: CPU vs CUDA");
+    //validate(cpu_bwd, cuda_bwd, "Backward: CPU vs CUDA");
 
-    save_bin(cpu_fwd, "cpp_forward.bin");
-    save_bin(cpu_bwd, "cpp_backward.bin");
+    //save_bin(cpu_fwd, "cpp_forward.bin");
+    //save_bin(cpu_bwd, "cpp_backward.bin");
 
     cout << "\nDone." << endl;
     return 0;

@@ -129,7 +129,7 @@ Mat bicubic_backward_cpu(const Mat& input, const Mat& grad_output,
 
 
 #define TILE        16
-#define MAX_SCALE   2
+#define MAX_SCALE   1
 
 #define SMEM_W      (TILE * 2 * MAX_SCALE + 4)
 #define SMEM_H      (TILE * 2 * MAX_SCALE + 4)
@@ -495,7 +495,7 @@ int main()
     gray.convertTo(gray, CV_32F);
 
     int inW  = gray.cols, inH  = gray.rows;
-    int outW = inW * 2,   outH = inH * 2;
+    int outW = inW * 8,   outH = inH * 8;
 
     cout << "Input  : " << inH << " x " << inW << endl;
     cout << "Output : " << outH << " x " << outW << endl;
