@@ -425,7 +425,7 @@ int main()
     gray.convertTo(gray, CV_32F);
 
     int inW  = gray.cols, inH  = gray.rows;
-    int outW = inW * 4,   outH = inH * 4;
+    int outW = inW * 2,   outH = inH * 2;
 
     cout << "Input  : " << inH << " x " << inW << endl;
     cout << "Output : " << outH << " x " << outW << endl;

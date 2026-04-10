@@ -16,9 +16,9 @@ backward_v7 = [3.52826, 5.55669, 12.27196, 16.22655, 29.66015, 40.25507, 60.6065
 
 
 plt.figure()
-plt.plot(scales, forward_v1, marker='o', label='V1')
-plt.plot(scales, forward_v6, marker='s', label='V6')
-plt.plot(scales, forward_v7, marker='^', label='V7')
+plt.plot(scales, forward_v6, marker='o', label='V1')
+plt.plot(scales, forward_v1, marker='s', label='V6')
+plt.plot(scales, forward_v1, marker='^', label='V7')
 
 plt.xlabel("Scale")
 plt.ylabel("Time (ms)")
